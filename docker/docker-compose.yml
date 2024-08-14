@@ -1,0 +1,71 @@
+services:    
+
+  postgres:
+    image: postgis/postgis:15-3.3
+    ports:
+      - 7080:5432
+    expose:
+      - 7080
+    environment:
+  
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      TZ: Europe/Rome
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dagster_example"]
+      interval: 10s
+      retries: 4
+
+    volumes: 
+        - ./init-user-db.sh:/docker-entrypoint-initdb.d/init-user-db.sh
+
+  # This service runs dagster-webserver, which loads your user code from the user code container.
+  # Since our instance uses the QueuedRunCoordinator, any runs submitted from the webserver will be put on
+  # a queue and later dequeued and launched by dagster-daemon.
+  dagster_webserver:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile_dagster
+    entrypoint:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3000"
+      - -w
+      - workspace.yaml
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    environment:
+      DAGSTER_POSTGRES_HOST: "postgres"
+      DAGSTER_POSTGRES_USER: "dagster_example"
+      DAGSTER_POSTGRES_PASSWORD: "dagster_example"
+      DAGSTER_POSTGRES_DB: "dagster_example"
+      DAGSTER_POSTGRES_PORT: 5432
+    depends_on:
+      - postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dagster_daemon:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile_dagster
+    entrypoint:
+      - dagster-daemon
+      - run
+    restart: on-failure
+    
+    environment:
+      DAGSTER_POSTGRES_HOST: "postgres"
+      DAGSTER_POSTGRES_USER: "dagster_example"
+      DAGSTER_POSTGRES_PASSWORD: "dagster_example"
+      DAGSTER_POSTGRES_DB: "dagster_example"
+      DAGSTER_POSTGRES_PORT: 5432
+    depends_on:
+      - postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
